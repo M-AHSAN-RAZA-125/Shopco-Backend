@@ -2,6 +2,9 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 const Product = require('./models/Product');
+const User = require('./models/User');
+const Order = require('./models/Order');
+const bcrypt = require('bcryptjs');
 const products = [
   {
     "legacyId": 1,
@@ -199,9 +202,85 @@ const products = [
 (async () => {
   try {
     await connectDB();
+    
+    // 1. Seed Products
     await Product.deleteMany({});
-    await Product.insertMany(products);
-    console.log(`Inserted ${products.length} Shop.Co products from your frontend JSON.`);
+    const insertedProducts = await Product.insertMany(products);
+    console.log(`Inserted ${insertedProducts.length} Shop.Co products from your frontend JSON.`);
+
+    // 2. Seed Admin User
+    const adminEmail = "admin@shopco.com";
+    await User.deleteMany({ email: { $in: [adminEmail, "customer@shopco.com"] } });
+    
+    const adminUser = await User.create({
+      name: "ShopCo Admin",
+      email: adminEmail,
+      password: await bcrypt.hash("admin12345", 12),
+      role: "admin",
+    });
+    console.log(`Admin account created: email="${adminEmail}", password="admin12345"`);
+
+    // 3. Seed Demo Customer & Sample Order
+    const customerUser = await User.create({
+      name: "Ahmed Khan",
+      email: "customer@shopco.com",
+      password: await bcrypt.hash("customer12345", 12),
+      role: "customer",
+    });
+
+    if (insertedProducts.length >= 2) {
+      await Order.deleteMany({});
+      const p1 = insertedProducts[0];
+      const p2 = insertedProducts[1];
+      const subtotal = p1.price + p2.price * 2;
+      const discountAmount = Math.round(subtotal * 0.2);
+      const deliveryFee = 15;
+      const total = subtotal - discountAmount + deliveryFee;
+
+      await Order.create({
+        user: customerUser._id,
+        items: [
+          {
+            product: p1._id,
+            legacyId: p1.legacyId,
+            name: p1.name,
+            image: p1.image,
+            price: p1.price,
+            quantity: 1,
+            size: "Large",
+            color: "Navy",
+          },
+          {
+            product: p2._id,
+            legacyId: p2.legacyId,
+            name: p2.name,
+            image: p2.image,
+            price: p2.price,
+            quantity: 2,
+            size: "Medium",
+            color: "Olive",
+          },
+        ],
+        shippingAddress: {
+          fullName: "Ahmed Khan",
+          phone: "+92 300 1234567",
+          address: "House 12, Street 4, F-8/2",
+          city: "Islamabad",
+          postalCode: "44000",
+          country: "Pakistan",
+        },
+        subtotal,
+        discountAmount,
+        deliveryFee,
+        total,
+        paymentMethod: "cash_on_delivery",
+        paymentStatus: "pending",
+        status: "processing",
+      });
+      console.log("Sample order created for Ahmed Khan.");
+    }
+
+    console.log("Database seeded successfully!");
   } catch (error) { console.error(error); process.exitCode = 1; }
   finally { await mongoose.disconnect(); }
 })();
